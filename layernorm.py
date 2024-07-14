@@ -29,8 +29,18 @@ class LayerNorm:
     @staticmethod
     def backward(dout, cache):
         x, w, mean, rstd = cache
-        dw = (dout * (x - mean) * rstd).sum(dim=(0, 1))
+        # recompute the norm (save memory at the cost of compute)
+        norm = (x - mean) * rstd
+        B, T, C = x.size()
+        dw = (dout * norm).sum(dim=(0, 1))
         db = dout.sum(dim=(0, 1))
+        dnorm = dout * w
+        dx = (
+            dnorm
+            - dnorm.mean(dim=-1, keepdim=True)
+            - norm * (dnorm * norm).mean(dim=-1, keepdim=True)
+        )
+        dx *= rstd
         return dw, db, dx
 
 
@@ -40,13 +50,13 @@ C = 4
 x = torch.randn(B, T, C, requires_grad=True)
 w = torch.randn(C, requires_grad=True)
 b = torch.randn(C, requires_grad=True)
-out, cache = LayerNorm.forward(x, w, b) # B,T,C
+out, cache = LayerNorm.forward(x, w, b)  # B,T,C
 
 dout = torch.randn(B, T, C)
 fakeloss = (out * dout).sum()
 fakeloss.backward()
 
 dw, db, dx = LayerNorm.backward(dout, cache)
-print(((w.grad - dw)**2).mean())
-print(((b.grad - db)**2).mean())
-print(((x.grad - dx)**2).mean())
+print(((w.grad - dw) ** 2).mean())
+print(((b.grad - db) ** 2).mean())
+print(((x.grad - dx) ** 2).mean())
