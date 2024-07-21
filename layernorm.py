@@ -57,6 +57,27 @@ fakeloss = (out * dout).sum()
 fakeloss.backward()
 
 dw, db, dx = LayerNorm.backward(dout, cache)
-print(((w.grad - dw) ** 2).mean())
-print(((b.grad - db) ** 2).mean())
-print(((x.grad - dx) ** 2).mean())
+
+print("dx error:", (x.grad - dx).abs().max().item())
+print("dw error:", (w.grad - dw).abs().max().item())
+print("db error:", (b.grad - db).abs().max().item())
+
+# for reference checking in C also
+x, w, mean, rstd = cache
+
+def write(tensor, handle):
+    handle.write(tensor.detach().numpy().astype("float32").tobytes())
+
+
+# Write to file
+with open("ln.bin", "wb") as file:
+    write(x, file)  # (B, T, C)
+    write(w, file)  # (C, )
+    write(b, file)  # (C, )
+    write(out, file)  # (B, T, C)
+    write(mean, file)  # (B, T)
+    write(rstd, file)  # (B, T)
+    write(dout, file)  # (B, T, C)
+    write(dx, file)  # (B, T, C)
+    write(dw, file)  # (C, )
+    write(db, file)  # (C, )
