@@ -30,8 +30,7 @@ class LayerNorm:
     def backward(dout, cache):
         x, w, mean, rstd = cache
         # recompute the norm (save memory at the cost of compute)
-        norm = (x - mean) * rstd
-        B, T, C = x.size()
+        norm = (x - mean) * rstd # B,T,C
         dw = (dout * norm).sum(dim=(0, 1))
         db = dout.sum(dim=(0, 1))
         dnorm = dout * w
