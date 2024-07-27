@@ -76,7 +76,9 @@ void layernorm_backward(float *dout, float *dw, float *db, float *dx,
   }
 }
 
-int check_correct(float *ref, float *pred, int size) {
+// poor man's tensor checker
+int check_tensor(float *ref, float *pred, int size, const char *label) {
+  printf("check %s\n", label);
   for (int i = 0; i < size; ++i) {
     if (fabs(ref[i] - pred[i]) > 1e-4) {
       printf("pred: %f and ref: %f\n", pred[i], ref[i]);
@@ -129,21 +131,19 @@ int main() {
   fread(dx_ref, sizeof(float), B * T * C, fp);
   fread(dw_ref, sizeof(float), C, fp);
   fread(db_ref, sizeof(float), C, fp);
+  fclose(fp);
 
   layernorm_forward(x, w, b, mean, rstd, out, B, T, C);
 
-  if (check_correct(out_ref, out, B * T * C) == EXIT_FAILURE) {
-    printf("check out fail!\n");
+  if (check_tensor(out_ref, out, B * T * C, "out") == EXIT_FAILURE) {
     return EXIT_FAILURE;
   }
 
-  if (check_correct(mean_ref, mean, C) == EXIT_FAILURE) {
-    printf("check mean failed!\n");
+  if (check_tensor(mean_ref, mean, C, "mean") == EXIT_FAILURE) {
     return EXIT_FAILURE;
   }
 
-  if (check_correct(rstd_ref, rstd, C) == EXIT_FAILURE) {
-    printf("check rstd failed!\n");
+  if (check_tensor(rstd_ref, rstd, C, "rstd") == EXIT_FAILURE) {
     return EXIT_FAILURE;
   }
 
@@ -152,21 +152,36 @@ int main() {
   // initialize dw, db and dx to zeros
   layernorm_backward(dout, dw, db, dx, x, w, b, mean, rstd, B, T, C);
 
-  if (check_correct(dw_ref, dw, C) == EXIT_FAILURE) {
-    printf("check dw fail!\n");
+  if (check_tensor(dw_ref, dw, C, "dw") == EXIT_FAILURE) {
     return EXIT_FAILURE;
   }
 
-  if (check_correct(db_ref, db, C) == EXIT_FAILURE) {
-    printf("check db fail!\n");
+  if (check_tensor(db_ref, db, C, "db") == EXIT_FAILURE) {
     return EXIT_FAILURE;
   }
 
-  if (check_correct(dx_ref, dx, B * T * C) == EXIT_FAILURE) {
-    printf("check dx fail!\n");
+  if (check_tensor(dx_ref, dx, B * T * C, "dx") == EXIT_FAILURE) {
     return EXIT_FAILURE;
   }
 
   printf("backward success!\n");
+
+  free(x);
+  free(w);
+  free(b);
+  free(out);
+  free(dout);
+  free(mean);
+  free(rstd);
+  free(dw);
+  free(db);
+  free(dx);
+  free(out_ref);
+  free(dx_ref);
+  free(mean_ref);
+  free(rstd_ref);
+  free(dw_ref);
+  free(db_ref);
+
   return EXIT_SUCCESS;
 }
