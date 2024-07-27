@@ -3,29 +3,37 @@
 #include <stdlib.h>
 #include <string.h>
 
-const float EPS = 1e-5;
+const float EPS = 1e-5f;
 
-void layernorm_forward(int B, int T, int C, float *x, float *w, float *bias,
-                       float *mean, float *rstd, float *out) {
+void layernorm_forward(float *inp, float *w, float *bias, float *mean,
+                       float *rstd, float *out, int B, int T, int C) {
   for (int b = 0; b < B; ++b) {
     for (int t = 0; t < T; ++t) {
-      for (int i = 0; i < C; ++i) {
-        mean[b * T + t] += x[b * T * C + t * C + i]; // # B,T,1
-      }
-      mean[b * T + t] /= C;
-      float mu = mean[b * T + t];
+      float m = 0.0f;
 
-      float var = 0;
-      float xshift[C];
+      // seek to the input position inp[b,t,:]
+      float *x = inp + b * T * C + t * C;
       for (int i = 0; i < C; ++i) {
-        xshift[i] = x[b * T * C + t * C + i] - mu;
-        var += pow(xshift[i], 2);
+        m += x[i]; // # B,T,1
       }
-      float rstd_v = pow(var / C + EPS, -0.5);
+      m /= C;
+
+      float var = 0.0f;
+      for (int i = 0; i < C; ++i) {
+        float xshift = x[i] - m;
+        var += pow(xshift, 2);
+      }
+      var /= C;
+      float rstd_v = pow(var + EPS, -0.5);
+
+      // seek to the output position out[b,t:]
+      float *out_p = out + b * T * C + t * C;
+      for (int i = 0; i < C; ++i) {
+        out_p[i] = (x[i] - m) * rstd_v * w[i] + bias[i];
+      }
+
+      mean[b * T + t] = m;
       rstd[b * T + t] = rstd_v;
-      for (int i = 0; i < C; ++i) {
-        out[b * T * C + t * C + i] = xshift[i] * rstd_v * w[i] + bias[i];
-      }
     }
   }
 }
@@ -137,7 +145,7 @@ int main() {
   fread(dw_ref, sizeof(float), C, fp);
   fread(db_ref, sizeof(float), C, fp);
 
-  layernorm_forward(B, T, C, x, w, b, mean, rstd, out);
+  layernorm_forward(x, w, b, mean, rstd, out, B, T, C);
 
   if (check_correct(out_ref, out, B * T * C) == EXIT_FAILURE) {
     printf("check out fail!\n");
