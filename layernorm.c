@@ -38,59 +38,39 @@ void layernorm_forward(float *inp, float *w, float *bias, float *mean,
   }
 }
 
-void layernorm_backward(float *dout, float *dw, float *db,
-                        float *dx, float *inp, float *w, float *bias, float *mean,
+void layernorm_backward(float *dout, float *dw, float *db, float *dx,
+                        float *inp, float *w, float *bias, float *mean,
                         float *rstd, int B, int T, int C) {
-  // recompute norm (saving memory at the cost of compute)
-  for (int b = 0; b < B; ++b) {
-    for (int t = 0; t < T; ++t) {
-      float mu = mean[b * T + t];
-      float rstd_ = rstd[b * T + t];
-
-      // seek to the input position inp[b,t,:]
-      float* x = inp + b*T*C + t*C;
-      for (int c = 0; c < C; ++c) {
-        x[c] = (x[c] - mu) * rstd_; // norm
-      }
-    }
-  }
-
-  for (int c = 0; c < C; ++c) {
-    for (int b = 0; b < B; ++b) {
-      for (int t = 0; t < T; ++t) {
-        dw[c] += dout[b * T * C + t * C + c] * inp[b * T * C + t * C + c];
-        db[c] += dout[b * T * C + t * C + c];
-      }
-    }
-  }
-  for (int b = 0; b < B; ++b) {
-    for (int t = 0; t < T; ++t) {
-      float* dout_p = dout + b*T*C + t*C;
-      for (int c = 0; c < C; ++c) {
-        dout_p[c] *= w[c];
-      }
-    }
-  }
 
   for (int b = 0; b < B; ++b) {
     for (int t = 0; t < T; ++t) {
-      // compute mean along with C
-      float dnorm_mean = 0.0f;
-      float dnorm_mean_2 = 0.0f;
-      // seek to the dout/norm position dout[b,t,:]/norm[b,t,:]
+      // seek to the position [b,t,:]
+      float *x = inp + b * T * C + t * C;
       float *dout_p = dout + b * T * C + t * C;
-      float *norm_p = inp + b * T * C + t * C;
-      for (int c = 0; c < C; ++c) {
-        dnorm_mean += dout_p[c];
-        dnorm_mean_2 += (dout_p[c] * norm_p[c]);
+      float *dx_p = dx + b * T * C + t * C;
+
+      float m = mean[b * T + t];
+      float v = rstd[b * T + t];
+
+      // first: two reduce operations along with C
+      float dnorm_mean = 0.0f;
+      float dnorm_norm_mean = 0.0f;
+      for (int i = 0; i < C; ++i) {
+        // recompute norm (saving memory at the cost of compute)
+        float norm_v = (x[i] - m) * v;
+        float dnorm_v = dout_p[i] * w[i];
+        dnorm_mean += dnorm_v;
+        dnorm_norm_mean += dnorm_v * norm_v;
       }
       dnorm_mean /= C;
-      dnorm_mean_2 /= C;
+      dnorm_norm_mean /= C;
 
-      float rstd_ = rstd[b * T + t];
-      float *dx_p = dx + b * T * C + t * C;
-      for (int c = 0; c < C; ++c) {
-        dx_p[c] = (dout_p[c] - dnorm_mean - norm_p[c] * dnorm_mean_2) * rstd_;
+      for (int i = 0; i < C; ++i) {
+        float norm_v = (x[i] - m) * v;
+        float dnorm_v = dout_p[i] * w[i];
+        dw[i] += dout_p[i] * norm_v;
+        db[i] += dout_p[i];
+        dx_p[i] += (dnorm_v - dnorm_mean - norm_v * dnorm_norm_mean) * v;
       }
     }
   }
@@ -98,7 +78,7 @@ void layernorm_backward(float *dout, float *dw, float *db,
 
 int check_correct(float *ref, float *pred, int size) {
   for (int i = 0; i < size; ++i) {
-    if (fabs(ref[i] - pred[i]) > 1e-1) {
+    if (fabs(ref[i] - pred[i]) > 1e-4) {
       printf("pred: %f and ref: %f\n", pred[i], ref[i]);
       printf("failed!\n");
       return EXIT_FAILURE;
