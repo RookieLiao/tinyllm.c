@@ -7,17 +7,35 @@
 // Structures
 
 typedef struct {
-    int dim;
-    int hidden_dim;
-    int n_layers;
-    int n_heads;
-    int n_kv_heads;
-    int vocab_size;
-    int seq_len;
+  int dim;        // transformer dim
+  int hidden_dim; // for ffn layers
+  int n_layers;   // number of layers
+  int n_heads;    // num of query heads
+  int n_kv_heads; // num of key/value heads (for GQA and MQA whose kv_heads <
+                  // query_heads)
+  int vocab_size; // vocabulary size
+  int seq_len;    // max sequence length
 } Config;
 
 typedef struct {
-    // Add necessary fields for transformer weights
+  // token embedding weights
+  float *token_embedding_table; // (vocab_size, dim)
+  // weights for rmsnorms
+  float *rms_attn_weight; // (layer, dim)
+  float *rms_ffn_weight;  // (layer, dim)
+  // weights for attention, note dim == n_heads * head_size
+  float *wq; // (layer, dim, n_heads * head_size)
+  float *wk; // (layer, dim, kv_heads * head_size)
+  float *wv; // (layer, dim, kv_heads * head_size)
+  float *wo; // (layer, n_heads * head_size, dim)
+  // weights for FFN
+  float *up;   // (layer, hidden_dim, dim)
+  float *gate; // (layer, dim, 4*dim)
+  float *down; // (layer, 4*dim, dim)
+  // final rmsnorm
+  float *rms_final_weight; // (dim,)
+  // (Optional): classifier weights for the logits, on the last layer
+  float *wcls; // (dim, vocab_size)
 } TransformerWeights;
 
 typedef struct {
