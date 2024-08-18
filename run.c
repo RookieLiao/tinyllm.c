@@ -41,7 +41,7 @@ typedef struct {
 
 typedef struct {
   float* x; // activation
-  float* xr;
+  float* xb;
 } RunState;
 
 typedef struct {
@@ -105,6 +105,7 @@ void memory_map_weights(
 
 void read_checkpoint(
     const char* checkpoint_path,
+    Config* config,
     TransformerWeights* transformer_weight,
     ssize_t* file_size) {
   printf("lxylog\n");
@@ -114,7 +115,7 @@ void read_checkpoint(
     exit(EXIT_FAILURE);
   }
   printf("lxylog for opening\n");
-  Config* config = malloc(sizeof(Config));
+  // Config* config = malloc(sizeof(Config));
   size_t read = fread(config, sizeof(Config), 1, file);
   printf("lxylog for read size %ld\n", read);
   if (read != 1) {
@@ -158,11 +159,38 @@ void read_checkpoint(
   memory_map_weights(transformer_weight, config, weight, tie_embedding);
 }
 
+void malloc_run_state(const Config* c, RunState* s) {
+  s->x = malloc(c->seq_len * c->dim * sizeof(float));
+  s->xb = malloc(c->seq_len * c->dim * sizeof(float));
+}
+
+void build_transformer(Transformer* transformer, const char* checkpoint_path) {
+  ssize_t file_size;
+  read_checkpoint(
+      checkpoint_path, &transformer->config, &transformer->weights, &file_size);
+  malloc_run_state(&transformer->config, &transformer->state);
+}
+
 // Function declarations
 
-// Question 1: Implement rmsnorm
-void rmsnorm(float* o, float* x, float* weight, int size) {
-  // Your implementation here
+void rmsnorm(float* o, float* x, const float* weight, const int size) {
+  float ss = 0.f; // mean of squared values
+  for (size_t i = 0; i < size; ++i) {
+    ss += x[i] * x[i];
+  }
+  ss /= size;
+  ss += 1e-5f;
+  ss = 1.f / sqrtf(ss);
+  for (size_t i = 0; i < size; ++i) {
+    printf("weight is %f\n", weight[i]);
+    printf("ss is %f\n", ss);
+    printf("x[i] is %f\n", x[i]);
+    printf("o[i] is %f\n", o[i]);
+    float val = x[i] * ss * weight[i];
+    printf("val is %f\n", val);
+    o[i] = val;
+    // o[i] = x[i] * ss * weight[i];
+  }
 }
 
 // Question 2: Implement softmax
@@ -177,7 +205,29 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
 
 // Question 4: Implement forward (partial)
 float* forward(Transformer* transformer, int token, int pos) {
-  // Your implementation here
+  printf("start to write forward logic\n");
+  Config p = transformer->config;
+  float* x = transformer->state.x;
+  TransformerWeights w = transformer->weights;
+
+  int dim = p.dim;
+
+  // token lookup table
+  float* embed_token =
+      transformer->weights.token_embedding_table + (token * dim);
+  memcpy(x, embed_token, dim * sizeof(float));
+  printf("embedding finish, first element is %f\n", x[0]);
+
+  int n_layers = transformer->config.n_layers;
+  for (int j = 0; j < n_layers; ++j) {
+    rmsnorm(
+        transformer->state.xb,
+        x,
+        transformer->weights.rms_attn_weight,
+        transformer->config.dim);
+    x = transformer->state.xb;
+    printf("after rms_attn, first element is %f\n", transformer->state.x[0]);
+  }
 }
 
 // Question 5: Implement RoPE in forward function
@@ -239,12 +289,10 @@ int main(int argc, char* argv[]) {
     checkpoint_path = argv[1];
   }
   printf("checkpoint path %s\n", checkpoint_path);
-  ssize_t file_size;
-  TransformerWeights transformer_weight;
-  read_checkpoint(checkpoint_path, &transformer_weight, &file_size);
+  build_transformer(&transformer, checkpoint_path);
 
   // Call generate or chat based on mode
-
+  float* logits = forward(&transformer, 10, 0);
   // Clean up and free memory
 
   return EXIT_SUCCESS;
