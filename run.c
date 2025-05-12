@@ -5,7 +5,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <time.h>
-// Structures
+
 
 typedef struct {
   int dim; // transformer dim
@@ -160,14 +160,13 @@ void read_checkpoint(
 }
 
 void malloc_run_state(const Config* c, RunState* s) {
-  s->x = malloc(c->seq_len * c->dim * sizeof(float));
-  s->xb = malloc(c->seq_len * c->dim * sizeof(float));
+  s->x = calloc(c->seq_len * c->dim, sizeof(float));
+  s->xb = calloc(c->seq_len * c->dim, sizeof(float));
 }
 
 void build_transformer(Transformer* transformer, const char* checkpoint_path) {
   ssize_t file_size;
-  read_checkpoint(
-      checkpoint_path, &transformer->config, &transformer->weights, &file_size);
+  read_checkpoint(checkpoint_path, &transformer->config, &transformer->weights, &file_size);
   malloc_run_state(&transformer->config, &transformer->state);
 }
 
@@ -288,11 +287,13 @@ int main(int argc, char* argv[]) {
   if (argc > 1) {
     checkpoint_path = argv[1];
   }
-  printf("checkpoint path %s\n", checkpoint_path);
+#if DEBUG > 0
+  printf("loading checkpoint path %s\n", checkpoint_path);
+#endif
   build_transformer(&transformer, checkpoint_path);
 
   // Call generate or chat based on mode
-  float* logits = forward(&transformer, 10, 0);
+  // float* logits = forward(&transformer, 10, 0);
   // Clean up and free memory
 
   return EXIT_SUCCESS;
