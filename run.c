@@ -58,17 +58,14 @@ typedef struct {
   // Add necessary fields for sampler
 } Sampler;
 
-void memory_map_weights(
-    TransformerWeights* w,
-    Config* cfg,
-    float* w_ptr,
-    int tie_embedding) {
-  int dim = cfg->dim;
-  int head_size = dim / cfg->n_heads;
-  size_t n_layers = cfg->n_layers;
+void memory_map_weights(TransformerWeights* w, Config* config, float* w_ptr, int tie_embedding) {
+  // TODO(xingyu): continue from here
+  int dim = config->dim;
+  int head_size = dim / config->n_heads;
+  size_t n_layers = config->n_layers;
 
   w->token_embedding_table = w_ptr;
-  w_ptr += cfg->vocab_size * dim;
+  w_ptr += config->vocab_size * dim;
 
   w->rms_attn_weight = w_ptr;
   w_ptr += n_layers * dim;
@@ -77,9 +74,9 @@ void memory_map_weights(
   w->wq = w_ptr;
   w_ptr += n_layers * dim * dim;
   w->wk = w_ptr;
-  w_ptr += n_layers * dim * cfg->n_kv_heads * head_size;
+  w_ptr += n_layers * dim * config->n_kv_heads * head_size;
   w->wv = w_ptr;
-  w_ptr += n_layers * dim * cfg->n_kv_heads * head_size;
+  w_ptr += n_layers * dim * config->n_kv_heads * head_size;
   w->wo = w_ptr;
   w_ptr += n_layers * dim * dim;
 
@@ -87,43 +84,39 @@ void memory_map_weights(
   w->rms_ffn_weight = w_ptr;
   w_ptr += n_layers * dim;
   w->gate = w_ptr;
-  w_ptr += n_layers * dim * cfg->hidden_dim;
+  w_ptr += n_layers * dim * config->hidden_dim;
   w->down = w_ptr;
-  w_ptr += n_layers * dim * cfg->hidden_dim;
+  w_ptr += n_layers * dim * config->hidden_dim;
   w->up = w_ptr;
-  w_ptr += n_layers * dim * cfg->hidden_dim;
+  w_ptr += n_layers * dim * config->hidden_dim;
 
   w->rms_final_weight = w_ptr;
   w_ptr += dim;
-  w_ptr += cfg->seq_len * head_size /
+  w_ptr += config->seq_len * head_size /
       2; // skip what used to be freq_cls_real (for RoPE)
-  w_ptr += cfg->seq_len * head_size /
+  w_ptr += config->seq_len * head_size /
       2; // skip what used to be freq_cls_imag(for RoPE)
   w->wcls = tie_embedding ? w->token_embedding_table : w_ptr;
   printf("w_cls weight 4: %f\n", w->wcls[3]);
 }
 
-void read_checkpoint(
-    const char* checkpoint_path,
-    Config* config,
-    TransformerWeights* transformer_weight,
-    ssize_t* file_size) {
-  printf("lxylog\n");
+void read_checkpoint(const char* checkpoint_path, Config* config, TransformerWeights* transformer_weight, ssize_t* file_size) {
   FILE* file = fopen(checkpoint_path, "rb");
   if (file == NULL) {
     printf("Couldn't open file %s\n", checkpoint_path);
     exit(EXIT_FAILURE);
   }
-  printf("lxylog for opening\n");
-  // Config* config = malloc(sizeof(Config));
-  size_t read = fread(config, sizeof(Config), 1, file);
-  printf("lxylog for read size %ld\n", read);
-  if (read != 1) {
+  printf("lxylog dim: %d\n", config->dim);
+  size_t config_items_read = fread(config, sizeof(Config), 1, file);
+  #if DEBUG > 0
+  printf("config read size %ld\n", config_items_read);
+  #endif
+  if (config_items_read != 1) {
     printf("Failed to read config from file\n");
     fclose(file);
     exit(EXIT_FAILURE);
   }
-  // Print all Config attributes
+  #if DEBUG > 0
   printf("Config:\n");
   printf("  dim: %d\n", config->dim);
   printf("  hidden_dim: %d\n", config->hidden_dim);
@@ -132,14 +125,13 @@ void read_checkpoint(
   printf("  n_kv_heads: %d\n", config->n_kv_heads);
   printf("  vocab_size: %d\n", config->vocab_size);
   printf("  seq_len: %d\n", config->seq_len);
+  #endif
 
   // negative vocab size is hacky way of signaling unshared weights. bit yikes.
   int tie_embedding = config->vocab_size > 0 ? 1 : 0;
   config->vocab_size = abs(config->vocab_size);
   fseek(file, 0, SEEK_END); // move file pointer to end of file
   *file_size = ftell(file); // get the file size, in bytes
-
-  printf("total size %ld\n", *file_size);
   fclose(file);
 
   int fd = open(checkpoint_path, O_RDONLY);
@@ -154,9 +146,8 @@ void read_checkpoint(
     exit(EXIT_FAILURE);
   }
 
-  // float* weight = (float*)((char*)mapped_data + sizeof(Config));
-  float* weight = (float*)((char*)mapped_data + sizeof(Config));
-  memory_map_weights(transformer_weight, config, weight, tie_embedding);
+  float* weight_ptr = (float*)((char*)mapped_data + sizeof(Config));
+  memory_map_weights(transformer_weight, config, weight_ptr, tie_embedding);
 }
 
 void malloc_run_state(const Config* c, RunState* s) {
@@ -276,7 +267,6 @@ void chat(
 
 // Main function
 int main(int argc, char* argv[]) {
-  // Initialize structures
   Transformer transformer;
   Tokenizer tokenizer;
   Sampler sampler;
