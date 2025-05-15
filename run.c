@@ -11,8 +11,8 @@ typedef struct {
   int dim; // transformer dim
   int hidden_dim; // for ffn layers
   int n_layers; // number of layers
-  int n_heads; // num of query heads
-  int n_kv_heads; // num of key/value heads (for GQA and MQA whose kv_heads <
+  int q_heads; // num of query heads
+  int kv_heads; // num of key/value heads (for GQA and MQA whose kv_heads <
                   // query_heads)
   int vocab_size; // vocabulary size
   int seq_len; // max sequence length
@@ -58,46 +58,43 @@ typedef struct {
   // Add necessary fields for sampler
 } Sampler;
 
-void memory_map_weights(TransformerWeights* w, Config* config, float* w_ptr, int tie_embedding) {
-  // TODO(xingyu): continue from here
+void memory_map_weights(TransformerWeights* w, Config* config, float* weight_ptr, int tie_embedding) {
   int dim = config->dim;
-  int head_size = dim / config->n_heads;
+  int head_size = dim / config->q_heads;
   size_t n_layers = config->n_layers;
 
-  w->token_embedding_table = w_ptr;
-  w_ptr += config->vocab_size * dim;
+  w->token_embedding_table = weight_ptr;
+  weight_ptr += config->vocab_size * dim; // move to next weight
 
-  w->rms_attn_weight = w_ptr;
-  w_ptr += n_layers * dim;
+  w->rms_attn_weight = weight_ptr;
+  weight_ptr += n_layers * dim;
 
   // attn
-  w->wq = w_ptr;
-  w_ptr += n_layers * dim * dim;
-  w->wk = w_ptr;
-  w_ptr += n_layers * dim * config->n_kv_heads * head_size;
-  w->wv = w_ptr;
-  w_ptr += n_layers * dim * config->n_kv_heads * head_size;
-  w->wo = w_ptr;
-  w_ptr += n_layers * dim * dim;
+  w->wq = weight_ptr;
+  weight_ptr += n_layers * dim * config->q_heads * head_size;
+  w->wk = weight_ptr;
+  weight_ptr += n_layers * dim * config->kv_heads * head_size;
+  w->wv = weight_ptr;
+  weight_ptr += n_layers * dim * config->kv_heads * head_size;
+  w->wo = weight_ptr;
+  weight_ptr += n_layers * dim * dim;
 
   // ffn
-  w->rms_ffn_weight = w_ptr;
-  w_ptr += n_layers * dim;
-  w->gate = w_ptr;
-  w_ptr += n_layers * dim * config->hidden_dim;
-  w->down = w_ptr;
-  w_ptr += n_layers * dim * config->hidden_dim;
-  w->up = w_ptr;
-  w_ptr += n_layers * dim * config->hidden_dim;
+  w->rms_ffn_weight = weight_ptr;
+  weight_ptr += n_layers * dim;
+  w->gate = weight_ptr;
+  weight_ptr += n_layers * dim * config->hidden_dim;
+  w->down = weight_ptr;
+  weight_ptr += n_layers * dim * config->hidden_dim;
+  w->up = weight_ptr;
+  weight_ptr += n_layers * dim * config->hidden_dim;
 
-  w->rms_final_weight = w_ptr;
-  w_ptr += dim;
-  w_ptr += config->seq_len * head_size /
-      2; // skip what used to be freq_cls_real (for RoPE)
-  w_ptr += config->seq_len * head_size /
-      2; // skip what used to be freq_cls_imag(for RoPE)
-  w->wcls = tie_embedding ? w->token_embedding_table : w_ptr;
-  printf("w_cls weight 4: %f\n", w->wcls[3]);
+  w->rms_final_weight = weight_ptr;
+  weight_ptr += dim;
+  // skip what used to be freq_cls_real (for RoPE)
+  weight_ptr += config->seq_len * head_size / 2;
+  weight_ptr += config->seq_len * head_size / 2;
+  w->wcls = tie_embedding ? w->token_embedding_table : weight_ptr;
 }
 
 void read_checkpoint(const char* checkpoint_path, Config* config, TransformerWeights* transformer_weight, ssize_t* file_size) {
