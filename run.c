@@ -118,8 +118,8 @@ void read_checkpoint(const char* checkpoint_path, Config* config, TransformerWei
   printf("  dim: %d\n", config->dim);
   printf("  hidden_dim: %d\n", config->hidden_dim);
   printf("  n_layers: %d\n", config->n_layers);
-  printf("  n_heads: %d\n", config->n_heads);
-  printf("  n_kv_heads: %d\n", config->n_kv_heads);
+  printf("  n_heads: %d\n", config->q_heads);
+  printf("  n_kv_heads: %d\n", config->kv_heads);
   printf("  vocab_size: %d\n", config->vocab_size);
   printf("  seq_len: %d\n", config->seq_len);
   #endif
@@ -147,9 +147,14 @@ void read_checkpoint(const char* checkpoint_path, Config* config, TransformerWei
   memory_map_weights(transformer_weight, config, weight_ptr, tie_embedding);
 }
 
-void malloc_run_state(const Config* c, RunState* s) {
-  s->x = calloc(c->seq_len * c->dim, sizeof(float));
-  s->xb = calloc(c->seq_len * c->dim, sizeof(float));
+void malloc_run_state(const Config* config, RunState* state) {
+  size_t vec_size = (size_t)(config->seq_len * config->dim);
+  state->x = calloc(vec_size, sizeof(float));
+  state->xb = calloc(vec_size, sizeof(float));
+  if (!state->x || !state->xb) {
+    fprintf(stderr, "Failed to allocate memory for RunState\n");
+    exit(EXIT_FAILURE);
+  }
 }
 
 void build_transformer(Transformer* transformer, const char* checkpoint_path) {
@@ -192,29 +197,25 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
 
 // Question 4: Implement forward (partial)
 float* forward(Transformer* transformer, int token, int pos) {
-  printf("start to write forward logic\n");
-  Config p = transformer->config;
-  float* x = transformer->state.x;
-  TransformerWeights w = transformer->weights;
+  printf("start to forward logic\n");
+  const Config* config = &transformer->config;
+  const TransformerWeights* weights = &transformer->weights;
+  const RunState* state = &transformer->state;
 
-  int dim = p.dim;
+  float* x = state->x;
+  int dim = config->dim;
 
   // token lookup table
-  float* embed_token =
-      transformer->weights.token_embedding_table + (token * dim);
+  float* embed_token = weights->token_embedding_table + (token * dim);
   memcpy(x, embed_token, dim * sizeof(float));
   printf("embedding finish, first element is %f\n", x[0]);
 
-  int n_layers = transformer->config.n_layers;
-  for (int j = 0; j < n_layers; ++j) {
-    rmsnorm(
-        transformer->state.xb,
-        x,
-        transformer->weights.rms_attn_weight,
-        transformer->config.dim);
-    x = transformer->state.xb;
-    printf("after rms_attn, first element is %f\n", transformer->state.x[0]);
+  for (int i = 0; i < config->n_layers; ++i) {
+    rmsnorm(state->xb, x, weights->rms_attn_weight, dim);
+    x = state->xb;
+    printf("after rms_attn, first element is %f\n", x[0]);
   }
+  return x;
 }
 
 // Question 5: Implement RoPE in forward function
@@ -223,6 +224,7 @@ float* forward(Transformer* transformer, int token, int pos) {
 // Question 6: Implement sample
 int sample(Sampler* sampler, float* logits) {
   // Your implementation here
+  return 0;
 }
 
 // Question 7: Implement encode
@@ -268,19 +270,18 @@ int main(int argc, char* argv[]) {
   Tokenizer tokenizer;
   Sampler sampler;
 
-  // Parse command line arguments and set up configuration
-  char* checkpoint_path = NULL;
-  // ./run stories42M.bin -t 0.8 -n 256 -i "One day, Lily met a Shoggoth"
-  if (argc > 1) {
-    checkpoint_path = argv[1];
+  /* Expect exactly one positional argument: the checkpoint file to load. */
+  if (argc < 2) {
+    fprintf(stderr, "Usage: %s <checkpoint_path>\n", argv[0]);
+    return EXIT_FAILURE;
   }
+  const char* checkpoint_path = argv[1];
 #if DEBUG > 0
   printf("loading checkpoint path %s\n", checkpoint_path);
 #endif
   build_transformer(&transformer, checkpoint_path);
 
-  // Call generate or chat based on mode
-  // float* logits = forward(&transformer, 10, 0);
+  float* logits = forward(&transformer, 10, 0);
   // Clean up and free memory
 
   return EXIT_SUCCESS;
