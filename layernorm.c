@@ -21,9 +21,8 @@ void layernorm_forward(
 
       // seek to the input position inp[b,t,:]
       float* x = inp + b * T * C + t * C;
-      for (int i = 0; i < C; ++i) {
-        m += x[i]; // # B,T,1
-      }
+      // # B,T,1
+      for (int i = 0; i < C; ++i) { m += x[i]; }
       m /= C;
 
       float var = 0.0f;
@@ -151,34 +150,22 @@ int main() {
 
   layernorm_forward(x, w, b, mean, rstd, out, B, T, C);
 
-  if (check_tensor(out_ref, out, B * T * C, "out") == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
+  if (check_tensor(out_ref, out, B * T * C, "out") == EXIT_FAILURE) { return EXIT_FAILURE; }
 
-  if (check_tensor(mean_ref, mean, C, "mean") == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
+  if (check_tensor(mean_ref, mean, C, "mean") == EXIT_FAILURE) { return EXIT_FAILURE; }
 
-  if (check_tensor(rstd_ref, rstd, C, "rstd") == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
+  if (check_tensor(rstd_ref, rstd, C, "rstd") == EXIT_FAILURE) { return EXIT_FAILURE; }
 
   printf("forward success!\n");
 
   // initialize dw, db and dx to zeros
   layernorm_backward(dout, dw, db, dx, x, w, b, mean, rstd, B, T, C);
 
-  if (check_tensor(dw_ref, dw, C, "dw") == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
+  if (check_tensor(dw_ref, dw, C, "dw") == EXIT_FAILURE) { return EXIT_FAILURE; }
 
-  if (check_tensor(db_ref, db, C, "db") == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
+  if (check_tensor(db_ref, db, C, "db") == EXIT_FAILURE) { return EXIT_FAILURE; }
 
-  if (check_tensor(dx_ref, dx, B * T * C, "dx") == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
+  if (check_tensor(dx_ref, dx, B * T * C, "dx") == EXIT_FAILURE) { return EXIT_FAILURE; }
 
   printf("backward success!\n");
 

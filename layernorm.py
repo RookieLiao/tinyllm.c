@@ -64,8 +64,7 @@ print("db error:", (b.grad - db).abs().max().item())
 # for reference checking in C also
 x, w, mean, rstd = cache
 
-def write(tensor, handle):
-    handle.write(tensor.detach().numpy().astype("float32").tobytes())
+def write(tensor, handle): handle.write(tensor.detach().numpy().astype("float32").tobytes())
 
 
 # Write to file
