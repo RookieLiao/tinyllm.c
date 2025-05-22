@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <time.h>
 
+const float EPS = 1e-5f;
 
 typedef struct {
   int dim; // transformer dim
@@ -163,25 +164,20 @@ void build_transformer(Transformer* transformer, const char* checkpoint_path) {
   malloc_run_state(&transformer->config, &transformer->state);
 }
 
-// Function declarations
-
-void rmsnorm(float* o, float* x, const float* weight, const int size) {
-  float ss = 0.f; // mean of squared values
-  for (size_t i = 0; i < size; ++i) {
-    ss += x[i] * x[i];
-  }
-  ss /= size;
-  ss += 1e-5f;
-  ss = 1.f / sqrtf(ss);
-  for (size_t i = 0; i < size; ++i) {
-    printf("weight is %f\n", weight[i]);
-    printf("ss is %f\n", ss);
-    printf("x[i] is %f\n", x[i]);
-    printf("o[i] is %f\n", o[i]);
-    float val = x[i] * ss * weight[i];
-    printf("val is %f\n", val);
-    o[i] = val;
-    // o[i] = x[i] * ss * weight[i];
+void rmsnorm(float* out, float* x, const float* weight, const int B, const int T, const int C) {
+  for (int b = 0; b < B; ++b) {
+    // move ptr of x and out
+    x += b * T * C;
+    out += b * T * C;
+    for (int t = 0; t < T; ++t) {
+      float* inp_t = x + t * C;
+      float* out_t = out + t * C;
+      float ss = 0.f; // sum of squares
+      for (int i = 0; i < C; ++i) { ss += inp_t[i] * inp_t[i]; }
+      ss /= C;
+      ss = 1.f / sqrtf(ss + EPS); // (rsqrt)
+      for (int i = 0; i < C; ++i) { out_t[i] = inp_t[i] * ss * weight[i]; }
+    }
   }
 }
 
@@ -196,13 +192,13 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
 }
 
 // Question 4: Implement forward (partial)
-float* forward(Transformer* transformer, int token, int pos) {
-  printf("start to forward logic\n");
+float* llm_forward(Transformer* transformer, int token, int pos) {
   const Config* config = &transformer->config;
   const TransformerWeights* weights = &transformer->weights;
   const RunState* state = &transformer->state;
 
   float* x = state->x;
+  float* xb = state->xb;
   int dim = config->dim;
 
   // token lookup table
@@ -211,9 +207,7 @@ float* forward(Transformer* transformer, int token, int pos) {
   printf("embedding finish, first element is %f\n", x[0]);
 
   for (int i = 0; i < config->n_layers; ++i) {
-    rmsnorm(state->xb, x, weights->rms_attn_weight, dim);
-    x = state->xb;
-    printf("after rms_attn, first element is %f\n", x[0]);
+    rmsnorm(xb, x, weights->rms_attn_weight, 1, 1, dim);
   }
   return x;
 }
@@ -281,7 +275,7 @@ int main(int argc, char* argv[]) {
 #endif
   build_transformer(&transformer, checkpoint_path);
 
-  float* logits = forward(&transformer, 10, 0);
+  float* logits = llm_forward(&transformer, 10, 0);
   // Clean up and free memory
 
   return EXIT_SUCCESS;

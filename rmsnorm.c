@@ -7,7 +7,7 @@ const float EPS = 1e-5f;
 // make it from -1 to 1
 static float randf(void) { return (float)rand() / RAND_MAX * 2.f - 1.f; }
 
-void rmsnorm_forward(float* out, float* x, const float* weight, const int B, const int T, const int C) {
+void rmsnorm(float* out, float* x, const float* weight, const int B, const int T, const int C) {
   for (int b = 0; b < B; ++b) {
     // move ptr of x and out
     x += b * T * C;
@@ -58,7 +58,7 @@ int main(void) {
   fread(ref, sizeof(float), B * T * C, fp);
   fclose(fp);
 
-  rmsnorm_forward(out, x, w, B, T, C);
+  rmsnorm(out, x, w, B, T, C);
 
   if (check_tensor(ref, out, B * T * C, "out") == EXIT_FAILURE) { return EXIT_FAILURE; }
   printf("rmsnorm forward successfully!\n");
